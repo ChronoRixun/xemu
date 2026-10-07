@@ -975,7 +975,7 @@ void RenderFramebuffer(GLint tex, int width, int height, bool flip)
     RenderFramebuffer(tex, width, height, flip, scale);
 }
 
-bool RenderFramebufferToPng(GLuint tex, bool flip, std::vector<uint8_t> &png, int max_width, int max_height)
+bool RenderFramebufferToPng(GLuint tex, bool flip, std::vector<uint8_t> &png, int max_width, int max_height, unsigned int guest_scale)
 {
     int width, height;
 
@@ -984,7 +984,16 @@ bool RenderFramebufferToPng(GLuint tex, bool flip, std::vector<uint8_t> &png, in
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
 
-    width = height * GetDisplayAspectRatio(width, height);
+    if (guest_scale) {
+        width /= guest_scale;
+        height /= guest_scale;
+    } else {
+        width = height * GetDisplayAspectRatio(width, height);
+    }
+
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
 
     if (!max_width) max_width = width;
     if (!max_height) max_height = height;

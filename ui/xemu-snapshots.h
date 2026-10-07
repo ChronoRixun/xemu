@@ -59,6 +59,8 @@ void xemu_snapshots_mark_dirty(void);
 void xemu_snapshots_set_framebuffer_texture(GLuint tex, bool flip);
 bool xemu_snapshots_load_png_to_texture(GLuint tex, void *buf, size_t size);
 void *xemu_snapshots_create_framebuffer_thumbnail_png(size_t *size);
+void *xemu_capture_framebuffer_png(GLuint tex, bool flip, unsigned int scale,
+                                 size_t *size);
 
 #ifdef __cplusplus
 }

@@ -32,9 +32,11 @@
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
 #include "qemu/rcu.h"
+#include "qemu/coroutine.h"
 #include "qemu-version.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-block.h"
+#include "qapi/qapi-commands-ui.h"
 #include "qobject/qdict.h"
 #include "ui/console.h"
 #include "ui/input.h"
@@ -122,6 +124,86 @@ static QEMUTimer *vblank_timer;
 static QemuThread vblank_thread;
 static bool qemu_exiting;
 static int exit_status;
+
+typedef struct XemuScreenshotRequest {
+    void *png;
+    size_t size;
+    bool done;
+} XemuScreenshotRequest;
+
+/* Accessed only with the BQL held; GL work is performed by gl_render_frame. */
+static XemuScreenshotRequest *screenshot_request;
+
+static void *coroutine_fn capture_guest_png(size_t *size, Error **errp)
+{
+    XemuScreenshotRequest request = { 0 };
+    int64_t deadline = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) +
+                       5 * NANOSECONDS_PER_SECOND;
+
+    assert(bql_locked());
+    if (screenshot_request) {
+        error_setg(errp, "Another xemu screenshot capture is in progress");
+        return NULL;
+    }
+
+    screenshot_request = &request;
+    while (!request.done && !qatomic_read(&qemu_exiting) &&
+           qemu_clock_get_ns(QEMU_CLOCK_REALTIME) < deadline) {
+        qemu_co_sleep_ns(QEMU_CLOCK_REALTIME, 10 * SCALE_MS);
+    }
+    screenshot_request = NULL;
+
+    if (!request.done) {
+        error_setg(errp,
+                   "Timed out waiting for the xemu UI to capture a frame");
+        return NULL;
+    }
+    if (!request.png) {
+        error_setg(errp, "Failed to encode the xemu guest frame as PNG");
+        return NULL;
+    }
+
+    *size = request.size;
+    return request.png;
+}
+
+void coroutine_fn qmp_xemu_screenshot(const char *filename, Error **errp)
+{
+    size_t size;
+    g_autofree void *png = capture_guest_png(&size, errp);
+    if (!png) {
+        return;
+    }
+
+    FILE *file = qemu_fopen(filename, "wb");
+    if (!file) {
+        error_setg_errno(errp, errno, "Failed to open '%s' for writing",
+                         filename);
+        return;
+    }
+    if (fwrite(png, 1, size, file) != size) {
+        error_setg_errno(errp, errno, "Failed to write PNG to '%s'", filename);
+        fclose(file);
+        return;
+    }
+    if (fclose(file) != 0) {
+        error_setg_errno(errp, errno, "Failed to close PNG file '%s'",
+                         filename);
+    }
+}
+
+XemuScreenshot *coroutine_fn qmp_xemu_screenshot_base64(Error **errp)
+{
+    size_t size;
+    g_autofree void *png = capture_guest_png(&size, errp);
+    if (!png) {
+        return NULL;
+    }
+
+    XemuScreenshot *result = g_new0(XemuScreenshot, 1);
+    result->data = g_base64_encode(png, size);
+    return result;
+}
 
 void tcg_register_init_ctx(void); // tcg.c
 
@@ -879,6 +961,16 @@ static void gl_render_frame(struct xemu_console *scon)
      * possible lengthy blocking (for vsync).
      */
     xemu_main_loop_lock();
+    unsigned int screenshot_scale = 1;
+    if (screenshot_request && !flip_required) {
+        /* This getter drops the BQL, so recheck the request afterwards. */
+        screenshot_scale = nv2a_get_surface_scale_factor();
+    }
+    if (screenshot_request && !screenshot_request->done) {
+        screenshot_request->png = xemu_capture_framebuffer_png(
+            tex, flip_required, screenshot_scale, &screenshot_request->size);
+        screenshot_request->done = true;
+    }
     xemu_hud_update();
     xemu_main_loop_unlock();
 

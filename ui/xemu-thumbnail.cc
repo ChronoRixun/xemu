@@ -27,6 +27,24 @@
 static GLuint display_tex = 0;
 static bool display_flip = false;
 
+void *xemu_capture_framebuffer_png(GLuint tex, bool flip, unsigned int scale,
+                                 size_t *size)
+{
+    if (!SDL_GL_GetCurrentContext() || tex == 0) {
+        return NULL;
+    }
+
+    std::vector<uint8_t> png;
+    if (!RenderFramebufferToPng(tex, flip, png, 0, 0, scale)) {
+        return NULL;
+    }
+
+    void *buf = g_malloc(png.size());
+    memcpy(buf, png.data(), png.size());
+    *size = png.size();
+    return buf;
+}
+
 void xemu_snapshots_set_framebuffer_texture(GLuint tex, bool flip)
 {
     display_tex = tex;

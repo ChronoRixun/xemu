@@ -202,6 +202,59 @@
   'if': 'CONFIG_PIXMAN' }
 
 ##
+# @xemu-screenshot:
+#
+# Save the current Xbox guest frame as a PNG, without the xemu HUD or
+# window borders.  Capture runs on the UI render thread, including
+# while the guest is paused.  The image uses guest pixel dimensions,
+# independent of window size, aspect ratio overrides, and render
+# scaling.
+#
+# @filename: output path on the host; an existing file is replaced
+#
+# Errors:
+#     - GenericError if capture fails or the UI does not respond
+#       within five seconds
+#     - If the file cannot be opened or written, GenericError
+#
+# Since: 10.0
+#
+# .. qmp-example::
+#
+#     -> { "execute": "xemu-screenshot",
+#          "arguments": { "filename": "/tmp/frame.png" } }
+#     <- { "return": {} }
+##
+{ 'command': 'xemu-screenshot', 'data': { 'filename': 'str' },
+  'coroutine': true }
+
+##
+# @XemuScreenshot:
+#
+# @data: base64-encoded PNG of the guest frame
+#
+# Since: 10.0
+##
+{ 'struct': 'XemuScreenshot', 'data': { 'data': 'str' } }
+
+##
+# @xemu-screenshot-base64:
+#
+# Return a PNG with the same capture semantics as `xemu-screenshot`,
+# without writing a file on the emulator host.
+#
+# Returns: the base64-encoded PNG
+#
+# Errors:
+#     - GenericError if capture fails or the UI does not respond
+#       within five seconds
+#
+# Since: 10.0
+##
+{ 'command': 'xemu-screenshot-base64', 'returns': 'XemuScreenshot',
+  'coroutine': true }
+
+##
 # Spice
 # =====
 ##
