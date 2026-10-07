@@ -35,7 +35,19 @@ void *xemu_capture_framebuffer_png(GLuint tex, bool flip, unsigned int scale,
     }
 
     std::vector<uint8_t> png;
-    if (!RenderFramebufferToPng(tex, flip, png, 0, 0, scale)) {
+    GLint viewport[4], pack_row_length, pack_image_height, pack_alignment;
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    glGetIntegerv(GL_PACK_ROW_LENGTH, &pack_row_length);
+    glGetIntegerv(GL_PACK_IMAGE_HEIGHT, &pack_image_height);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &pack_alignment);
+
+    bool encoded = RenderFramebufferToPng(tex, flip, png, 0, 0, scale);
+
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glPixelStorei(GL_PACK_ROW_LENGTH, pack_row_length);
+    glPixelStorei(GL_PACK_IMAGE_HEIGHT, pack_image_height);
+    glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
+    if (!encoded) {
         return NULL;
     }
 
